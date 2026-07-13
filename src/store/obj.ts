@@ -219,6 +219,15 @@ export const toggleCheckbox = () => {
   setCheckboxOpen(checkboxOpen() ? "false" : "true")
 }
 
+// Group files by type in the file list
+const [_groupByType, _setGroupByType] = createStorageSignal<string>(
+  "group_by_type",
+  "off",
+)
+export const groupByType = () => _groupByType() === "on"
+export const toggleGroupByType = () =>
+  _setGroupByType(groupByType() ? "off" : "on")
+
 export { objStore }
 // browser password
 const [_password, _setPassword] = createSignal<string>(

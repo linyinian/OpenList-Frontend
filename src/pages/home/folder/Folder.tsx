@@ -23,6 +23,7 @@ import lgFullscreen from "lightgallery/plugins/fullscreen"
 import "lightgallery/css/lightgallery-bundle.css"
 import { LightGallery } from "lightgallery/lightgallery"
 import { Search } from "./Search"
+import GroupSortBar from "./GroupSortBar"
 
 const ListLayout = lazy(() => import("./List"))
 const GridLayout = lazy(() => import("./Grid"))
@@ -79,6 +80,7 @@ const Folder = () => {
   const t = useT()
   return (
     <>
+      <GroupSortBar />
       <Switch>
         <Match when={layout() === "list"}>
           <ListLayout />

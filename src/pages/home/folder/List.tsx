@@ -15,6 +15,8 @@ import {
 import { OrderBy } from "~/store"
 import { Col, cols, ListItem } from "./ListItem"
 import { ItemCheckbox, useSelectWithMouse } from "./helper"
+import { GroupHeader } from "./GroupHeader"
+import { useSections } from "./group"
 import { bus } from "~/utils"
 
 export interface SortState {
@@ -124,12 +126,14 @@ export const ListTitle = (props: {
 
 const ListLayout = () => {
   const { pathname } = useRouter()
+  const t = useT()
 
   const [initialOrder, setInitialOrder] = createSignal<OrderBy>()
   const [initialReverse, setInitialReverse] = createSignal(false)
 
   const { registerSelectContainer, captureContentMenu } = useSelectWithMouse()
   registerSelectContainer()
+  const sections = useSections()
 
   onMount(() => {
     const saved = loadSortState(pathname())
@@ -165,10 +169,19 @@ const ListLayout = () => {
         initialOrder={initialOrder()}
         initialReverse={initialReverse()}
       />
-      <For each={objStore.objs}>
-        {(obj, i) => {
-          return <ListItem obj={obj} index={i()} />
-        }}
+      <For each={sections()}>
+        {(s) => (
+          <>
+            <Show when={s.labelKey}>
+              <GroupHeader label={t(s.labelKey!)} count={s.items.length} />
+            </Show>
+            <For each={s.items}>
+              {(it) => {
+                return <ListItem obj={it.obj} index={it.index} />
+              }}
+            </For>
+          </>
+        )}
       </For>
       <Show when={local["show_count_msg"] === "visible"}>
         <Text size="sm" color="$neutral11">

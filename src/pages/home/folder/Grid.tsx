@@ -4,11 +4,19 @@ import { GridItem } from "./GridItem"
 import "lightgallery/css/lightgallery-bundle.css"
 import { smartCountMsg, local, objStore } from "~/store"
 import { useSelectWithMouse } from "./helper"
+import { useT } from "~/hooks"
+import { GroupHeader } from "./GroupHeader"
+import { useSections } from "./group"
 
 const GridLayout = () => {
   const { isMouseSupported, registerSelectContainer, captureContentMenu } =
     useSelectWithMouse()
   registerSelectContainer()
+  const t = useT()
+  const sections = useSections()
+  const gridTemplate = `repeat(auto-fill, minmax(${
+    parseInt(local["grid_item_size"]) + 20
+  }px,1fr))`
   return (
     <>
       <Show when={local["show_count_msg"] === "visible"}>
@@ -18,21 +26,28 @@ const GridLayout = () => {
           </Text>
         </Box>
       </Show>
-      <Grid
-        oncapture:contextmenu={captureContentMenu}
-        class="viselect-container"
-        w="$full"
-        gap="$1"
-        templateColumns={`repeat(auto-fill, minmax(${
-          parseInt(local["grid_item_size"]) + 20
-        }px,1fr))`}
-      >
-        <For each={objStore.objs}>
-          {(obj, i) => {
-            return <GridItem obj={obj} index={i()} />
-          }}
-        </For>
-      </Grid>
+      <For each={sections()}>
+        {(s) => (
+          <>
+            <Show when={s.labelKey}>
+              <GroupHeader label={t(s.labelKey!)} count={s.items.length} />
+            </Show>
+            <Grid
+              oncapture:contextmenu={captureContentMenu}
+              class="viselect-container"
+              w="$full"
+              gap="$1"
+              templateColumns={gridTemplate}
+            >
+              <For each={s.items}>
+                {(it) => {
+                  return <GridItem obj={it.obj} index={it.index} />
+                }}
+              </For>
+            </Grid>
+          </>
+        )}
+      </For>
     </>
   )
 }
