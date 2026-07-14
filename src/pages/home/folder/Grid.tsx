@@ -2,7 +2,7 @@ import { Box, Grid, Text } from "@hope-ui/solid"
 import { For, Show } from "solid-js"
 import { GridItem } from "./GridItem"
 import "lightgallery/css/lightgallery-bundle.css"
-import { smartCountMsg, local, objStore } from "~/store"
+import { smartCountMsg, local, objStore, isGroupCollapsed } from "~/store"
 import { useSelectWithMouse } from "./helper"
 import { useT } from "~/hooks"
 import { GroupHeader } from "./GroupHeader"
@@ -30,21 +30,27 @@ const GridLayout = () => {
         {(s) => (
           <>
             <Show when={s.labelKey}>
-              <GroupHeader label={t(s.labelKey!)} count={s.items.length} />
+              <GroupHeader
+                label={t(s.labelKey!)}
+                count={s.items.length}
+                groupKey={s.key!}
+              />
             </Show>
-            <Grid
-              oncapture:contextmenu={captureContentMenu}
-              class="viselect-container"
-              w="$full"
-              gap="$1"
-              templateColumns={gridTemplate}
-            >
-              <For each={s.items}>
-                {(it) => {
-                  return <GridItem obj={it.obj} index={it.index} />
-                }}
-              </For>
-            </Grid>
+            <Show when={!s.labelKey || !isGroupCollapsed(s.key!)}>
+              <Grid
+                oncapture:contextmenu={captureContentMenu}
+                class="viselect-container"
+                w="$full"
+                gap="$1"
+                templateColumns={gridTemplate}
+              >
+                <For each={s.items}>
+                  {(it) => {
+                    return <GridItem obj={it.obj} index={it.index} />
+                  }}
+                </For>
+              </Grid>
+            </Show>
           </>
         )}
       </For>

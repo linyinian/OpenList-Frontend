@@ -176,7 +176,9 @@
     "find_replace_desc": "Find and Replace",
     "sort_name": "Name",
     "group_on": "Grouped",
-    "group_off": "Group by type"
+    "group_off": "Group by type",
+    "collapse": "Collapse",
+    "expand": "Expand"
   },
   "upload": {
     "add_as_task": "Add as task",

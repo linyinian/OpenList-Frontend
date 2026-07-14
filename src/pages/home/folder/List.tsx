@@ -5,6 +5,7 @@ import {
   allChecked,
   checkboxOpen,
   countMsg,
+  isGroupCollapsed,
   isIndeterminate,
   local,
   objStore,
@@ -173,13 +174,19 @@ const ListLayout = () => {
         {(s) => (
           <>
             <Show when={s.labelKey}>
-              <GroupHeader label={t(s.labelKey!)} count={s.items.length} />
+              <GroupHeader
+                label={t(s.labelKey!)}
+                count={s.items.length}
+                groupKey={s.key!}
+              />
             </Show>
-            <For each={s.items}>
-              {(it) => {
-                return <ListItem obj={it.obj} index={it.index} />
-              }}
-            </For>
+            <Show when={!s.labelKey || !isGroupCollapsed(s.key!)}>
+              <For each={s.items}>
+                {(it) => {
+                  return <ListItem obj={it.obj} index={it.index} />
+                }}
+              </For>
+            </Show>
           </>
         )}
       </For>

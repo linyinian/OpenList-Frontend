@@ -48,6 +48,8 @@ export interface GroupedItem {
 export interface Section {
   // undefined for the single flat section (grouping disabled)
   labelKey?: string
+  // category key used as the collapse-state identifier
+  key?: GroupKey
   items: GroupedItem[]
 }
 
@@ -64,6 +66,7 @@ export function groupObjs(objs: StoreObj[]): Section[] {
     buckets[categoryOf(obj)].push({ obj, index })
   })
   return GROUP_ORDER.filter((k) => buckets[k].length > 0).map((k) => ({
+    key: k,
     labelKey: GROUP_LABEL_KEY[k],
     items: buckets[k],
   }))

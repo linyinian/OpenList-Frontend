@@ -228,6 +228,30 @@ export const groupByType = () => _groupByType() === "on"
 export const toggleGroupByType = () =>
   _setGroupByType(groupByType() ? "off" : "on")
 
+// Collapsed state per group (keyed by GroupKey), persisted to localStorage.
+const collapsedGroupsInit = (() => {
+  try {
+    const raw = localStorage.getItem("collapsed_groups")
+    return new Set<string>(raw ? (JSON.parse(raw) as string[]) : [])
+  } catch {
+    return new Set<string>()
+  }
+})()
+const [_collapsedGroups, _setCollapsedGroups] =
+  createSignal<Set<string>>(collapsedGroupsInit)
+export const isGroupCollapsed = (key: string) => _collapsedGroups().has(key)
+export const toggleGroupCollapsed = (key: string) => {
+  const next = new Set(_collapsedGroups())
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  _setCollapsedGroups(next)
+  try {
+    localStorage.setItem("collapsed_groups", JSON.stringify([...next]))
+  } catch {
+    /* ignore quota / private-mode errors */
+  }
+}
+
 export { objStore }
 // browser password
 const [_password, _setPassword] = createSignal<string>(
