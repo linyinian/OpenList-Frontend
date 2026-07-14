@@ -36,7 +36,16 @@ const GridLayout = () => {
                 groupKey={s.key!}
               />
             </Show>
-            <Show when={!s.labelKey || !isGroupCollapsed(s.key!)}>
+            {/* Toggle visibility with CSS instead of unmounting, so
+                collapsing/expanding never re-mounts items (avoids replaying
+                each item's enter animation and reloading thumbnails). */}
+            <Box
+              w="$full"
+              style={{
+                display:
+                  s.labelKey && isGroupCollapsed(s.key!) ? "none" : "block",
+              }}
+            >
               <Grid
                 oncapture:contextmenu={captureContentMenu}
                 class="viselect-container"
@@ -50,7 +59,7 @@ const GridLayout = () => {
                   }}
                 </For>
               </Grid>
-            </Show>
+            </Box>
           </>
         )}
       </For>

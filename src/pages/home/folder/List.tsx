@@ -180,13 +180,23 @@ const ListLayout = () => {
                 groupKey={s.key!}
               />
             </Show>
-            <Show when={!s.labelKey || !isGroupCollapsed(s.key!)}>
+            {/* Toggle visibility with CSS instead of unmounting, so
+                collapsing/expanding never re-mounts rows (avoids replaying
+                each item's enter animation and reloading thumbnails).
+                `display: contents` keeps rows as direct VStack flex children
+                so spacing stays intact. */}
+            <div
+              style={{
+                display:
+                  s.labelKey && isGroupCollapsed(s.key!) ? "none" : "contents",
+              }}
+            >
               <For each={s.items}>
                 {(it) => {
                   return <ListItem obj={it.obj} index={it.index} />
                 }}
               </For>
-            </Show>
+            </div>
           </>
         )}
       </For>
