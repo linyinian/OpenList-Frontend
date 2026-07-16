@@ -178,7 +178,9 @@
     "group_on": "Grouped",
     "group_off": "Group by type",
     "collapse": "Collapse",
-    "expand": "Expand"
+    "expand": "Expand",
+    "collapse_all": "Collapse all",
+    "expand_all": "Expand all"
   },
   "upload": {
     "add_as_task": "Add as task",

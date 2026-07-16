@@ -240,16 +240,29 @@ const collapsedGroupsInit = (() => {
 const [_collapsedGroups, _setCollapsedGroups] =
   createSignal<Set<string>>(collapsedGroupsInit)
 export const isGroupCollapsed = (key: string) => _collapsedGroups().has(key)
+const persistCollapsedGroups = (set: Set<string>) => {
+  try {
+    localStorage.setItem("collapsed_groups", JSON.stringify([...set]))
+  } catch {
+    /* ignore quota / private-mode errors */
+  }
+}
 export const toggleGroupCollapsed = (key: string) => {
   const next = new Set(_collapsedGroups())
   if (next.has(key)) next.delete(key)
   else next.add(key)
   _setCollapsedGroups(next)
-  try {
-    localStorage.setItem("collapsed_groups", JSON.stringify([...next]))
-  } catch {
-    /* ignore quota / private-mode errors */
+  persistCollapsedGroups(next)
+}
+// Batch collapse/expand (used by the "collapse/expand all" toolbar action).
+export const setGroupsCollapsed = (keys: string[], collapsed: boolean) => {
+  const next = new Set(_collapsedGroups())
+  for (const key of keys) {
+    if (collapsed) next.add(key)
+    else next.delete(key)
   }
+  _setCollapsedGroups(next)
+  persistCollapsedGroups(next)
 }
 
 export { objStore }
