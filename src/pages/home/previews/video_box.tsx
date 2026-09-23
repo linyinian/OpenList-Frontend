@@ -17,6 +17,7 @@ import { convertURL, getPlatform, pathDir } from "~/utils"
 import Artplayer from "artplayer"
 import { SelectWrapper } from "~/components"
 import { BsArrowRight } from "solid-icons/bs"
+import { isRememberEnabled, setRememberEnabled } from "./play_progress"
 
 Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
 Artplayer.REMOVE_SRC_WHEN_DESTROY = true
@@ -138,6 +139,7 @@ export const AutoHeightPlugin = (player: Artplayer) => {
 export const VideoBox = (props: {
   children: JSXElement
   onAutoNextChange: (v: boolean) => void
+  onRememberProgressChange?: (v: boolean) => void
 }) => {
   const { replace, pathname } = useRouter()
   const { currentObjLink } = useLink()
@@ -185,6 +187,9 @@ export const VideoBox = (props: {
   }
   props.onAutoNextChange(autoNext === "true")
 
+  const rememberProgress = isRememberEnabled()
+  props.onRememberProgressChange?.(rememberProgress)
+
   const [showAll, setShowAll] = createSignal(
     localStorage.getItem("video_show_all_players") === "true",
   )
@@ -222,6 +227,18 @@ export const VideoBox = (props: {
             }}
           >
             {t("home.preview.auto_next")}
+          </Switch>
+          <Switch
+            css={{
+              whiteSpace: "nowrap",
+            }}
+            defaultChecked={rememberProgress}
+            onChange={(e: { currentTarget: HTMLInputElement }) => {
+              props.onRememberProgressChange?.(e.currentTarget.checked)
+              setRememberEnabled(e.currentTarget.checked)
+            }}
+          >
+            {t("home.preview.remember_progress")}
           </Switch>
         </HStack>
       </Show>

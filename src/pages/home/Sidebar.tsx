@@ -14,6 +14,7 @@ import { FolderTree, FolderTreeHandler } from "~/components"
 import { useRouter } from "~/hooks"
 import { local, objStore } from "~/store"
 import { objBoxRef } from "./Obj"
+import { SidebarFavorites } from "./SidebarFavorites"
 
 function SidebarPanel() {
   const { to } = useRouter()
@@ -88,6 +89,8 @@ function SidebarPanel() {
       onMouseLeave={resetSidebar}
       ref={(el: HTMLDivElement) => setSideBarRef(el)}
     >
+      <SidebarFavorites />
+      <Box h="1px" bgColor="$neutral6" my="$2" flexShrink={0} />
       <FolderTree
         autoOpen
         showEmptyIcon

@@ -31,6 +31,7 @@
     "tr-installing": "TrollStore Installing",
     "open_in_new_window": "Open in new window",
     "auto_next": "Auto next",
+    "remember_progress": "Remember progress",
     "fullscreen": "Fullscreen",
     "fullscreen_failed": "Failed to toggle fullscreen mode",
     "exit_fullscreen": "Exit fullscreen",
@@ -181,7 +182,16 @@
     "collapse": "Collapse",
     "expand": "Expand",
     "collapse_all": "Collapse all",
-    "expand_all": "Expand all"
+    "expand_all": "Expand all",
+    "favorite": "Pin to sidebar",
+    "unfavorite": "Unpin from sidebar",
+    "favorite_added": "Pinned to sidebar",
+    "favorite_removed": "Removed from sidebar"
+  },
+  "sidebar": {
+    "favorites": "Favorites",
+    "favorites_empty": "Right-click a folder and choose \"Pin to sidebar\"",
+    "remove_favorite": "Remove from favorites"
   },
   "upload": {
     "add_as_task": "Add as task",

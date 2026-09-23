@@ -27,6 +27,12 @@ import mpegts from "mpegts.js"
 import Hls from "hls.js"
 import { currentLang } from "~/app/i18n"
 import { AutoHeightPlugin, VideoBox } from "./video_box"
+import {
+  clearProgress,
+  isRememberEnabled,
+  resolveResumeTime,
+  saveProgress,
+} from "./play_progress"
 import { ArtPlayerIconsSubtitle } from "~/components/icons"
 import { useNavigate } from "@solidjs/router"
 import "./artplayer.css"
@@ -159,7 +165,8 @@ const Preview = () => {
       : "en",
     lock: true,
     fastForward: true,
-    autoPlayback: true,
+    // 注意:不要开 `autoPlayback`,它会在打开视频时弹出「上次看到 xx / 跳转播放」
+    // 的询问浮层。进度记忆改由 ./play_progress 静默处理。
     autoOrientation: true,
     airplay: true,
   }
@@ -351,6 +358,44 @@ const Preview = () => {
   onMount(() => {
     player = new Artplayer(option)
     createEffect(on(() => objStore.raw_url, switchUrl))
+
+    // 静默记住 / 恢复播放进度(替代 artplayer 内置 autoPlayback 的询问浮层)
+    let resumeId: string | undefined
+    let resumeTarget = 0
+    let lastSaved = 0
+    const currentId = () => {
+      const id = player.option.id
+      return id === undefined || id === null ? undefined : String(id)
+    }
+    player.on("video:timeupdate", () => {
+      if (!player.playing || !remember()) return
+      const now = Date.now()
+      if (now - lastSaved < 1000) return // timeupdate 约 4 次/秒,节流到 1 秒
+      lastSaved = now
+      saveProgress(currentId(), player.currentTime)
+    })
+    // metadata 就绪后才能算出目标位置(那时才拿得到 duration)
+    player.on("video:loadedmetadata", () => {
+      const id = currentId()
+      if (!id || resumeId === id) return
+      resumeId = id
+      resumeTarget = remember() ? resolveResumeTime(id, player.duration) : 0
+    })
+    // ⚠️ 真正的 seek 必须等到数据可播(loadeddata / canplay):
+    // 在 loadedmetadata 阶段赋 currentTime 会被浏览器随后的「初始 seek 到 0」冲掉
+    const applyResume = () => {
+      if (!resumeId || resumeTarget <= 0) return
+      if (player.video.readyState < 2) return
+      if (Math.abs(player.currentTime - resumeTarget) <= 1.5) {
+        // 已经到位(或用户已经拖到这附近),不再干预
+        resumeTarget = 0
+        return
+      }
+      player.seek = resumeTarget
+    }
+    player.on("video:loadeddata", applyResume)
+    player.on("video:canplay", applyResume)
+
     let auto_fullscreen: boolean
     switch (searchParams["auto_fullscreen"]) {
       case "true":
@@ -368,6 +413,8 @@ const Preview = () => {
     player.on("fullscreen", onFullscreen)
     player.on("fullscreenWeb", onFullscreen)
     player.on("video:ended", () => {
+      // 已看完,清掉进度,下次从头播
+      clearProgress(currentId())
       if (!autoNext()) return
       next_video()
     })
@@ -392,8 +439,12 @@ const Preview = () => {
     hlsPlayer?.destroy()
   })
   const [autoNext, setAutoNext] = createSignal()
+  const [remember, setRemember] = createSignal(isRememberEnabled())
   return (
-    <VideoBox onAutoNextChange={setAutoNext}>
+    <VideoBox
+      onAutoNextChange={setAutoNext}
+      onRememberProgressChange={setRemember}
+    >
       <Box w="$full" h="60vh" id="video-player" />
     </VideoBox>
   )

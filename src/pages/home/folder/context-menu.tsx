@@ -4,20 +4,25 @@ import "solid-contextmenu/dist/style.css"
 import { HStack, Icon, Text, useColorMode, Image } from "@hope-ui/solid"
 import { operations } from "../toolbar/operations"
 import { createMemo, For, Show } from "solid-js"
-import { bus, convertURL, notify, torrentParse } from "~/utils"
+import { bus, convertURL, notify, pathJoin, torrentParse } from "~/utils"
 import { ObjType, UserMethods } from "~/types"
 import {
+  addFavorite,
+  favorites,
   getSettingBool,
   haveSelected,
+  isFavorite,
   me,
   objStore,
   oneChecked,
+  removeFavorite,
   selectedObjs,
   userCan,
 } from "~/store"
 import { players } from "../previews/video_box"
 import { getPreviews } from "../previews"
 import { BsPlayCircleFill } from "solid-icons/bs"
+import { TbStar, TbStarOff } from "solid-icons/tb"
 import { isArchive } from "~/store/archive"
 import axios from "axios"
 
@@ -46,7 +51,7 @@ export const ContextMenu = () => {
     return UserMethods.is_admin(me()) || getSettingBool("package_download")
   }
   const { rawLink } = useLink()
-  const { isShare, pushHref, to } = useRouter()
+  const { isShare, pushHref, to, pathname } = useRouter()
   const openWithPreviews = createMemo(() => {
     const objs = selectedObjs()
     if (objs.length !== 1) return []
@@ -55,6 +60,19 @@ export const ContextMenu = () => {
     return getPreviews({ ...obj, provider: objStore.provider })
     // .filter((p) => p.key !== "download")
   })
+  // 侧边栏收藏目标：仅在「恰好选中一个文件夹」时成立
+  const favoriteTarget = createMemo(() => {
+    const objs = selectedObjs()
+    if (objs.length !== 1 || !objs[0].is_dir) return undefined
+    const path = pathJoin(pathname(), objs[0].name)
+    return { name: objs[0].name, path }
+  })
+  const favoriteChecked = createMemo(() => {
+    // 订阅 favorites() 以便收藏状态变化时菜单项能同步刷新
+    favorites()
+    const target = favoriteTarget()
+    return !!target && isFavorite(target.path)
+  })
   return (
     <Menu
       id={1}
@@ -62,6 +80,38 @@ export const ContextMenu = () => {
       theme={colorMode() !== "dark" ? "light" : "dark"}
       style="z-index: var(--hope-zIndices-popover)"
     >
+      <Show when={favoriteTarget() && !favoriteChecked()}>
+        <Item
+          onClick={() => {
+            const target = favoriteTarget()
+            if (!target) return
+            if (addFavorite(target)) {
+              notify.success(t("home.toolbar.favorite_added"))
+            }
+          }}
+        >
+          <HStack spacing="$2">
+            <Icon as={TbStar} boxSize="$7" p="$0_5" color="$warning9" />
+            <Text>{t("home.toolbar.favorite")}</Text>
+          </HStack>
+        </Item>
+      </Show>
+      <Show when={favoriteTarget() && favoriteChecked()}>
+        <Item
+          onClick={() => {
+            const target = favoriteTarget()
+            if (!target) return
+            if (removeFavorite(target.path)) {
+              notify.success(t("home.toolbar.favorite_removed"))
+            }
+          }}
+        >
+          <HStack spacing="$2">
+            <Icon as={TbStarOff} boxSize="$7" p="$0_5" color="$neutral9" />
+            <Text>{t("home.toolbar.unfavorite")}</Text>
+          </HStack>
+        </Item>
+      </Show>
       <Show when={openWithPreviews().length > 0}>
         <Submenu label={<ItemContent name="open_with" />}>
           <For each={openWithPreviews()}>
