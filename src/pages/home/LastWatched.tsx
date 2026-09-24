@@ -8,17 +8,24 @@ import { getMainColor } from "~/store"
 import { hoverColor } from "~/utils"
 
 /**
- * 首页「上次观看」入口。
+ * 根目录「上次观看」入口。
  *
  * 数据来自视频播放器写入的播放进度（见 ./previews/play_progress）。
  * 点击整卡即跳到该视频的播放页（视频文件的默认预览就是播放器，所以直接导航到路径即可）。
- * 无记录 / 非视频类型时不渲染任何内容。
+ *
+ * 显示条件（三者同时满足）：
+ *   ① 当前处于**根目录**（`pathname() === "/"`）—— 子文件夹里不占位，避免干扰浏览；
+ *   ② 存在视频类型的观看记录；
+ *   ③ 不是刚被 × 清除（用 signal 覆盖掉 localStorage 的旧值）。
  */
 export const LastWatched = () => {
   const t = useT()
-  const { to } = useRouter()
+  const { to, pathname } = useRouter()
   // 进首页时读一次;点 × 清除后置空隐藏
   const [item, setItem] = createSignal(getLastWatched())
+
+  // 仅根目录显示
+  const visible = () => pathname() === "/" && !!item()
 
   const percent = () => {
     const it = item()
@@ -34,7 +41,7 @@ export const LastWatched = () => {
   }
 
   return (
-    <Show when={item()}>
+    <Show when={visible()}>
       <Tooltip label={item()?.path} placement="top">
         <HStack
           class="last-watched"
