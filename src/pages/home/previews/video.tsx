@@ -37,6 +37,10 @@ import { ArtPlayerIconsSubtitle } from "~/components/icons"
 import { useNavigate } from "@solidjs/router"
 import "./artplayer.css"
 
+// 空格键暂停的判定窗口(ms):artplayer 的 hotkey 事件与随后排队的 video:pause 只隔毫秒级。
+// 这个窗口用于兜住「按了空格但其实没暂停」的情况,避免标记残留影响后续的暂停。
+const HOTKEY_PAUSE_WINDOW = 1000
+
 const Preview = () => {
   const { pathname, searchParams } = useRouter()
   const { proxyLink } = useLink()
@@ -396,6 +400,36 @@ const Preview = () => {
     }
     player.on("video:loadeddata", applyResume)
     player.on("video:canplay", applyResume)
+
+    // ── 控制栏显示时机定制(Allen 2026-09-24 指定)────────────────────────────
+    // artplayer 默认行为:鼠标移出不收(等 CONTROL_HIDE_TIME=3s 超时)、任何暂停都强制显示控制栏。
+    // 这里改成:① 播放中鼠标移出播放器 → 立即收起;② 空格键暂停 → 不强制显示控制栏。
+    const hideControls = () => {
+      // 设置面板以控制栏为锚点,面板开着时收起会留下一个悬空的面板
+      if (player.setting.show) return
+      player.controls.show = false
+    }
+    player.on("hover", (state, event) => {
+      // 仅处理「指针离开播放器」:暂停时保持默认、按住鼠标(拖进度条拖出边界)时不打扰
+      if (state || !player.playing || (event as MouseEvent).buttons !== 0)
+        return
+      hideControls()
+    })
+    // 空格暂停的识别:hotkey 事件在 art.toggle() 之后同步 emit,而 video:pause 是媒体事件(异步排队),
+    // 所以标记一定先就位、后消费;时间窗兜住「按了空格但没暂停」的情况。
+    let hotkeyPauseAt = 0
+    player.on("hotkey", (event) => {
+      if (event.code === "Space") hotkeyPauseAt = Date.now()
+    })
+    player.on("video:play", () => {
+      hotkeyPauseAt = 0
+    })
+    // 库内部那句 `art.controls.show = true` 注册在构造期,本回调注册在其后 → 后执行、可覆盖它
+    player.on("video:pause", () => {
+      if (Date.now() - hotkeyPauseAt > HOTKEY_PAUSE_WINDOW) return
+      hotkeyPauseAt = 0
+      hideControls()
+    })
 
     let auto_fullscreen: boolean
     switch (searchParams["auto_fullscreen"]) {
