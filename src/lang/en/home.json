@@ -193,6 +193,10 @@
     "favorites_empty": "Right-click a folder and choose \"Pin to sidebar\"",
     "remove_favorite": "Remove from favorites"
   },
+  "last_watched": {
+    "title": "Last watched",
+    "clear": "Clear record"
+  },
   "upload": {
     "add_as_task": "Add as task",
     "try_rapid": "Try rapid",

@@ -366,7 +366,8 @@ const Preview = () => {
         const now = Date.now()
         if (now - lastSaved < 1000) return // timeupdate 约 4 次/秒,节流到 1 秒
         lastSaved = now
-        saveProgress(currentId(), player.currentTime)
+        // 一并记录总时长,供首页「上次观看」显示进度比例(缺失也不影响续播)
+        saveProgress(currentId(), player.currentTime, player.duration)
       })
       // metadata 就绪后才能算出目标位置(那时才拿得到 duration)
       player.on("video:loadedmetadata", () => {

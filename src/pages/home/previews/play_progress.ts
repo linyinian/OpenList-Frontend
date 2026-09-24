@@ -12,6 +12,12 @@
 
 const STORAGE_KEY = "video_play_times"
 const ENABLE_KEY = "video_remember_progress"
+/**
+ * 各视频的总时长(秒)。独立于 video_play_times 存放:
+ * ① 不动已上线的续播数据格式,零回归风险;
+ * ② 时长缺失只影响"进度条比例",不影响续播本身。
+ */
+const DURATION_KEY = "video_play_durations"
 
 /** 短于该秒数不记录(与 artplayer 内置 AUTO_PLAYBACK_MIN 对齐) */
 export const PROGRESS_MIN = 5
@@ -41,6 +47,23 @@ const writeAll = (times: Times) => {
   }
 }
 
+const readDurations = (): Times => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DURATION_KEY) || "{}")
+    return raw && typeof raw === "object" ? (raw as Times) : {}
+  } catch {
+    return {}
+  }
+}
+
+const writeDurations = (durations: Times) => {
+  try {
+    localStorage.setItem(DURATION_KEY, JSON.stringify(durations))
+  } catch {
+    // 同上,静默降级
+  }
+}
+
 /** 开关是否开启(默认开启) */
 export const isRememberEnabled = () =>
   localStorage.getItem(ENABLE_KEY) !== "false"
@@ -55,7 +78,11 @@ export const getProgress = (id?: string) => {
 }
 
 /** 写入播放位置;不足 PROGRESS_MIN 秒不记 */
-export const saveProgress = (id: string | undefined, time: number) => {
+export const saveProgress = (
+  id: string | undefined,
+  time: number,
+  duration?: number,
+) => {
   if (!id || !Number.isFinite(time) || time < PROGRESS_MIN) return
   const times = readAll()
   const key = toKey(id)
@@ -67,6 +94,16 @@ export const saveProgress = (id: string | undefined, time: number) => {
     keys.slice(0, keys.length - PROGRESS_MAX).forEach((k) => delete times[k])
   }
   writeAll(times)
+  // 总时长单独存:仅用于首页"上次观看"显示进度比例,缺失不影响续播
+  if (Number.isFinite(duration) && (duration as number) > 0) {
+    const durations = readDurations()
+    durations[key] = Math.floor(duration as number)
+    const dkeys = Object.keys(durations)
+    if (dkeys.length > PROGRESS_MAX) {
+      dkeys.slice(0, dkeys.length - PROGRESS_MAX).forEach((k) => delete durations[k])
+    }
+    writeDurations(durations)
+  }
 }
 
 /** 清除某路径的记录(看完、或从头重播时调用) */
@@ -77,6 +114,11 @@ export const clearProgress = (id?: string) => {
   if (key in times) {
     delete times[key]
     writeAll(times)
+  }
+  const durations = readDurations()
+  if (key in durations) {
+    delete durations[key]
+    writeDurations(durations)
   }
 }
 
@@ -94,4 +136,78 @@ export const resolveResumeTime = (id: string | undefined, duration: number) => {
     return 0
   }
   return time
+}
+
+/**
+ * ===== 首页「上次观看」入口用的读取接口 =====
+ * 存储顺序即播放顺序(saveProgress 先删后加),所以「最后一项 = 最近观看」。
+ */
+
+/** 视频扩展名白名单 —— 入口仅限视频类型 */
+const VIDEO_EXTS = new Set([
+  "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v",
+  "mpg", "mpeg", "ts", "m2ts", "rmvb", "rm", "3gp", "vob", "ogv",
+])
+
+export interface WatchedItem {
+  /** 完整路径,可直接用于跳转 */
+  path: string
+  /** 文件名(路径最后一段) */
+  name: string
+  /** 已观看到的位置(秒) */
+  time: number
+  /** 总时长(秒);未知则 undefined —— 此时只显示位置,不显示比例 */
+  duration?: number
+}
+
+const isVideoPath = (path: string) => {
+  const dot = path.lastIndexOf(".")
+  if (dot < 0) return false
+  return VIDEO_EXTS.has(path.slice(dot + 1).toLowerCase())
+}
+
+const nameOfPath = (path: string) => {
+  const seg = path.split("/").filter(Boolean).pop()
+  return seg || path
+}
+
+/**
+ * 最近观看列表(按最近播放倒序)。
+ * 仅返回视频类型;非视频或位置为 0 的记录会被跳过。
+ */
+export const listRecentWatched = (limit = 1): WatchedItem[] => {
+  const times = readAll()
+  const durations = readDurations()
+  const keys = Object.keys(times)
+  const out: WatchedItem[] = []
+  for (let i = keys.length - 1; i >= 0 && out.length < limit; i--) {
+    const key = keys[i]
+    if (!key.startsWith("t:")) continue
+    const path = key.slice(2)
+    if (!isVideoPath(path)) continue
+    const time = times[key]
+    if (!time || time <= 0) continue
+    const duration = durations[key]
+    out.push({
+      path,
+      name: nameOfPath(path),
+      time,
+      duration: Number.isFinite(duration) && duration > 0 ? duration : undefined,
+    })
+  }
+  return out
+}
+
+/** 最近看过的那个视频;没有则返回 undefined */
+export const getLastWatched = (): WatchedItem | undefined =>
+  listRecentWatched(1)[0]
+
+/** 秒 → m:ss / h:mm:ss */
+export const formatSeconds = (sec: number) => {
+  const s = Math.max(0, Math.floor(sec))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return h > 0 ? h + ":" + pad(m) + ":" + pad(ss) : m + ":" + pad(ss)
 }

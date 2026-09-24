@@ -4,6 +4,7 @@ import { Obj } from "./Obj"
 import { Readme } from "./Readme"
 import { Container } from "./Container"
 import { Sidebar } from "./Sidebar"
+import { LastWatched } from "./LastWatched"
 
 export const Body = () => {
   return (
@@ -19,6 +20,7 @@ export const Body = () => {
       >
         <Readme files={["header.md", "top.md", "index.md"]} fromMeta="header" />
         <Nav />
+        <LastWatched />
         <Obj />
         <Readme
           files={["readme.md", "footer.md", "bottom.md"]}
