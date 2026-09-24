@@ -99,7 +99,18 @@ export const sortObjs = (orderBy: OrderBy, reverse?: boolean) => {
   )
 }
 
-export const appendObjs = (objs: Obj[]) => {
+/**
+ * 追加对象列表（分页「加载更多」用）。
+ *
+ * ⚠️ 本地修复（fork 定制）：上游此处直接 `prev.push(...objs)`，而调用方
+ * `usePath.ts` 的 append 分支是 `appendObjs(data.content)`（**没有** `?? []` 兜底，
+ * 而非 append 分支写的是 `setObjs(data.content ?? [])`）。
+ * 当接口把 `content` 返回为 null 时（实测：从**根目录**直接跳转到一个**文件**页时触发），
+ * `push(...null)` 会抛 `TypeError: null is not iterable` —— 导航与播放器渲染仍正常，
+ * 但会留一条未捕获异常。这里补上防御，语义上「没有内容可追加」本就应当直接返回。
+ */
+export const appendObjs = (objs: Obj[] | null | undefined) => {
+  if (!objs || objs.length === 0) return
   setObjStore(
     "objs",
     produce((prev) => prev.push(...objs)),
