@@ -31,8 +31,8 @@ Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
  * - 库内 5.4.0 的 `option.playbackRate` 类型只有 boolean，没有「默认倍速」支持 → 自己实现。
  * - 记录时机：监听 `video:ratechange`（媒体事件，菜单选择/右键菜单/代码赋值都会触发）。
  *   用档位白名单过滤可自然挡掉移动端长按快进的临时倍速（FAST_FORWARD_VALUE=3 不在列表里）。
- * - 恢复时机：与续播 seek 同理，`loadedmetadata` 阶段赋值会被随后资源加载重置，
- *   必须等 `loadeddata` / `canplay`。
+ * - 恢复时机：`loadedmetadata` / `loadeddata` / `canplay` 三钩子幂等（§5.2 的
+ *   「loadedmetadata 会被冲掉」只针对 currentTime seek；倍速赋值无此问题）。
  * - 恢复手段：直接改 video 元素的 `playbackRate` + `defaultPlaybackRate`，
  *   **不走 `player.playbackRate` setter** —— 那个 setter 每次赋值都会弹 notice（"Rate: 1.5x"），
  *   开场自动恢复会非常吵。直接改元素同样会触发 `video:ratechange`，
@@ -68,6 +68,10 @@ export function rememberPlaybackRate(player: Artplayer) {
     $video.defaultPlaybackRate = rate
     $video.playbackRate = rate
   }
+  // loadedmetadata 也挂上：非自动播放时 preload=metadata 只到 HAVE_METADATA，
+  // loadeddata/canplay 不会触发（§5.2 的「loadedmetadata 会被冲掉」只针对 currentTime seek，
+  // 倍速赋值无此问题，且 defaultPlaybackRate 已兜底资源加载重置）。三个钩子幂等。
+  player.on("video:loadedmetadata", apply)
   player.on("video:loadeddata", apply)
   player.on("video:canplay", apply)
 }
