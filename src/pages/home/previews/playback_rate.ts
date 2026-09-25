@@ -31,12 +31,11 @@ Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
  * - 库内 5.4.0 的 `option.playbackRate` 类型只有 boolean，没有「默认倍速」支持 → 自己实现。
  * - 记录时机：监听 `video:ratechange`（媒体事件，菜单选择/右键菜单/代码赋值都会触发）。
  *   用档位白名单过滤可自然挡掉移动端长按快进的临时倍速（FAST_FORWARD_VALUE=3 不在列表里）。
- * - 恢复时机：`loadedmetadata` / `loadeddata` / `canplay` 三钩子幂等（§5.2 的
- *   「loadedmetadata 会被冲掉」只针对 currentTime seek；倍速赋值无此问题）。
- * - 恢复手段：直接改 video 元素的 `playbackRate` + `defaultPlaybackRate`，
- *   **不走 `player.playbackRate` setter** —— 那个 setter 每次赋值都会弹 notice（"Rate: 1.5x"），
- *   开场自动恢复会非常吵。直接改元素同样会触发 `video:ratechange`，
- *   设置菜单的选中态（库内监听该事件做高亮）会正常跟随。
+ * - 恢复手段：直接改 video 元素的 `playbackRate` + `defaultPlaybackRate`，**不走
+ *   `player.playbackRate` setter** —— 那个 setter 每次赋值都会弹 notice（"Rate: 1.5x"）。
+ *   直接改元素同样会触发 `video:ratechange`，设置菜单的选中态（库内监听该事件做高亮）会正常跟随。
+ * - ⚠️ 必须在挂源（player.switchUrl）之前应用一次：库内置 switchUrl 会捕获并写回
+ *   切换开始时的倍速（见 rememberPlaybackRate 内注释）。
  */
 const RATE_STORAGE_KEY = "video_playback_rate"
 
@@ -54,7 +53,7 @@ export function getLastPlaybackRate(): number {
   }
 }
 
-/** 记录用户选择的倍速；并在每次换源后静默恢复到上次选择 */
+/** 记录用户选择的倍速；并在每次打开/换源后静默恢复到上次选择 */
 export function rememberPlaybackRate(player: Artplayer) {
   player.on("video:ratechange", () => {
     const rate = player.playbackRate
@@ -68,9 +67,13 @@ export function rememberPlaybackRate(player: Artplayer) {
     $video.defaultPlaybackRate = rate
     $video.playbackRate = rate
   }
-  // loadedmetadata 也挂上：非自动播放时 preload=metadata 只到 HAVE_METADATA，
-  // loadeddata/canplay 不会触发（§5.2 的「loadedmetadata 会被冲掉」只针对 currentTime seek，
-  // 倍速赋值无此问题，且 defaultPlaybackRate 已兜底资源加载重置）。三个钩子幂等。
+  // ⭐ 关键：注册时立即应用一次。OpenList 挂源走 player.switchUrl()，而库内置的
+  // switchUrl 在「切换开始时」捕获 art.playbackRate、canplay 时再写回（走 setter，会弹 notice）。
+  // 若等 loadedmetadata 才恢复，捕获值是旧的 1 → 恢复被冲回 1 + 弹 notice（smoke6 实测踩过）。
+  // 先把上次倍速写到 video 元素上（无 src 时也可赋值），捕获值即变成上次倍速，
+  // canplay 写回同值时 setter 早退 → 无 notice、不被冲掉。
+  apply()
+  // 兜底钩子：defaultPlaybackRate 已兜住资源加载重置，这里幂等再补一次
   player.on("video:loadedmetadata", apply)
   player.on("video:loadeddata", apply)
   player.on("video:canplay", apply)
