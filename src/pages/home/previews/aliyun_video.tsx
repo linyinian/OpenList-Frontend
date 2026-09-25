@@ -26,7 +26,7 @@ import {
   resolveResumeTime,
   saveProgress,
 } from "./play_progress"
-import { fixPlaybackRateLabel } from "./playback_rate"
+import { fixPlaybackRateLabel, rememberPlaybackRate } from "./playback_rate"
 import { ArtPlayerIconsSubtitle } from "~/components/icons"
 import { useNavigate } from "@solidjs/router"
 import { TiWarning } from "solid-icons/ti"
@@ -344,6 +344,8 @@ const Preview = () => {
       player = new Artplayer(option)
       // 倍速菜单里的 1.75 需要修正显示标签(artplayer 默认会显示成 "1.8")
       fixPlaybackRateLabel(player)
+      // 记住上次选择的倍速,打开/换源后静默恢复
+      rememberPlaybackRate(player)
       let auto_fullscreen: boolean
       switch (searchParams["auto_fullscreen"]) {
         case "true":

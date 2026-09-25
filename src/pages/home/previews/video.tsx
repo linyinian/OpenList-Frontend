@@ -33,7 +33,7 @@ import {
   resolveResumeTime,
   saveProgress,
 } from "./play_progress"
-import { fixPlaybackRateLabel } from "./playback_rate"
+import { fixPlaybackRateLabel, rememberPlaybackRate } from "./playback_rate"
 import { ArtPlayerIconsSubtitle } from "~/components/icons"
 import { useNavigate } from "@solidjs/router"
 import "./artplayer.css"
@@ -364,6 +364,8 @@ const Preview = () => {
     player = new Artplayer(option)
     // 倍速菜单里的 1.75 需要修正显示标签(artplayer 默认会显示成 "1.8")
     fixPlaybackRateLabel(player)
+    // 记住上次选择的倍速,打开/换源后静默恢复
+    rememberPlaybackRate(player)
     createEffect(on(() => objStore.raw_url, switchUrl))
 
     // 静默记住 / 恢复播放进度(替代 artplayer 内置 autoPlayback 的询问浮层)
