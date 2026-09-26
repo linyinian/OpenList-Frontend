@@ -43,6 +43,26 @@ function isKnownRate(rate: number): boolean {
   return (Artplayer.PLAYBACK_RATE as number[]).includes(rate)
 }
 
+/**
+ * 同步右键菜单「播放速度」项的高亮。
+ *
+ * 库内置右键菜单项（playbackRate$2）构造时默认高亮 1×，靠 `video:ratechange` 事件跟随。
+ * 但恢复路径是直改 video 元素且发生在挂源之前（readyState=HAVE_NOTHING）——
+ * Chrome 对未加载媒体不派发 ratechange → 右键菜单高亮停在「正常」（smoke7 实测复现）。
+ * 这里按 `player.contextmenu.playbackRate`（Component.add 动态挂上的 DOM 元素，
+ * types 未声明需 cast）手动把 art-current 切到当前档位。库自己的监听仍照常工作，互不冲突。
+ */
+function syncContextMenu(player: Artplayer) {
+  const $item = (
+    player.contextmenu as unknown as Record<string, HTMLElement | undefined>
+  ).playbackRate
+  if (!$item) return
+  const rate = player.playbackRate
+  $item.querySelectorAll<HTMLSpanElement>("span[data-value]").forEach((s) => {
+    s.classList.toggle("art-current", Number(s.dataset.value) === rate)
+  })
+}
+
 /** 读取上次选择的倍速（未记录 / 非法值时回退 1，即「正常」） */
 export function getLastPlaybackRate(): number {
   try {
@@ -58,6 +78,7 @@ export function rememberPlaybackRate(player: Artplayer) {
   player.on("video:ratechange", () => {
     const rate = player.playbackRate
     if (isKnownRate(rate)) localStorage.setItem(RATE_STORAGE_KEY, String(rate))
+    syncContextMenu(player)
   })
   const apply = () => {
     const rate = getLastPlaybackRate()
@@ -66,6 +87,8 @@ export function rememberPlaybackRate(player: Artplayer) {
     // defaultPlaybackRate 一并设置：浏览器加载新资源时 playbackRate 会重置回它
     $video.defaultPlaybackRate = rate
     $video.playbackRate = rate
+    // 挂源前直改不触发 ratechange，右键菜单高亮需要手动同步
+    syncContextMenu(player)
   }
   // ⭐ 关键：注册时立即应用一次。OpenList 挂源走 player.switchUrl()，而库内置的
   // switchUrl 在「切换开始时」捕获 art.playbackRate、canplay 时再写回（走 setter，会弹 notice）。
