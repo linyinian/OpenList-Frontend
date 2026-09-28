@@ -195,7 +195,8 @@
   },
   "last_watched": {
     "title": "Last watched",
-    "clear": "Clear record"
+    "clear": "Clear record",
+    "more": "More"
   },
   "upload": {
     "add_as_task": "Add as task",

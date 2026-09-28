@@ -100,7 +100,9 @@ export const saveProgress = (
     durations[key] = Math.floor(duration as number)
     const dkeys = Object.keys(durations)
     if (dkeys.length > PROGRESS_MAX) {
-      dkeys.slice(0, dkeys.length - PROGRESS_MAX).forEach((k) => delete durations[k])
+      dkeys
+        .slice(0, dkeys.length - PROGRESS_MAX)
+        .forEach((k) => delete durations[k])
     }
     writeDurations(durations)
   }
@@ -145,8 +147,23 @@ export const resolveResumeTime = (id: string | undefined, duration: number) => {
 
 /** 视频扩展名白名单 —— 入口仅限视频类型 */
 const VIDEO_EXTS = new Set([
-  "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v",
-  "mpg", "mpeg", "ts", "m2ts", "rmvb", "rm", "3gp", "vob", "ogv",
+  "mp4",
+  "mkv",
+  "avi",
+  "mov",
+  "wmv",
+  "flv",
+  "webm",
+  "m4v",
+  "mpg",
+  "mpeg",
+  "ts",
+  "m2ts",
+  "rmvb",
+  "rm",
+  "3gp",
+  "vob",
+  "ogv",
 ])
 
 export interface WatchedItem {
@@ -192,7 +209,8 @@ export const listRecentWatched = (limit = 1): WatchedItem[] => {
       path,
       name: nameOfPath(path),
       time,
-      duration: Number.isFinite(duration) && duration > 0 ? duration : undefined,
+      duration:
+        Number.isFinite(duration) && duration > 0 ? duration : undefined,
     })
   }
   return out
@@ -201,6 +219,9 @@ export const listRecentWatched = (limit = 1): WatchedItem[] => {
 /** 最近看过的那个视频;没有则返回 undefined */
 export const getLastWatched = (): WatchedItem | undefined =>
   listRecentWatched(1)[0]
+
+/** 单条记录删除的别名(语义更贴近列表项操作) */
+export const removeWatched = (path?: string) => clearProgress(path)
 
 /** 秒 → m:ss / h:mm:ss */
 export const formatSeconds = (sec: number) => {
