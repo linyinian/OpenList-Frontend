@@ -12,10 +12,11 @@ import {
   getMainColor,
   getSettingBool,
   objStore,
+  password,
   setShouldKeepState,
 } from "~/store"
 import { Obj, ObjType } from "~/types"
-import { ext, pathDir, pathJoin } from "~/utils"
+import { ext, fsGet, pathDir, pathJoin } from "~/utils"
 import Artplayer from "artplayer"
 import { type Option } from "artplayer"
 import { type Setting } from "artplayer"
@@ -29,6 +30,7 @@ import { currentLang } from "~/app/i18n"
 import { AutoHeightPlugin, VideoBox } from "./video_box"
 import {
   clearProgress,
+  getProgress,
   isRememberEnabled,
   resolveResumeTime,
   saveProgress,
@@ -41,6 +43,18 @@ import "./artplayer.css"
 // 空格键暂停的判定窗口(ms):artplayer 的 hotkey 事件与随后排队的 video:pause 只隔毫秒级。
 // 这个窗口用于兜住「按了空格但其实没暂停」的情况,避免标记残留影响后续的暂停。
 const HOTKEY_PAUSE_WINDOW = 1000
+
+// ── 直链过期自动续播(2026-09-30 Allen 反馈)──────────────────────────────────
+// 云盘/对象存储签发的 raw_url 是**带时效**的直链(实测天翼云盘 139Yun 为 S3 预签名,
+// `X-Amz-Expires=900` 即 15 分钟)。播放中一旦连接被断开(暂停、切后台、seek),
+// 恢复时浏览器要重新发起 Range 请求,此刻旧签名已过期 → 403 → <video> 抛 error。
+// 而 artplayer 内置的重连(`art.url = option.url`)复用的是同一个已过期 URL——
+// switchUrl 遇到相同 url 会直接 no-op,于是每秒「空转」一次、重试 5 次全失败,
+// 最后提示「视频加载失败」,只能刷新页面重新取直链。
+// 这里在视频报错时向后端重新要一份新鲜直链,保位置无缝续播。
+const STREAM_RECOVERY_MAX = 5 // 单次页面会话内自动恢复的次数上限(防异常循环)
+const STREAM_RECOVERY_COOLDOWN = 3000 // 两次恢复的最小间隔(ms)
+const NOTICE_CLEAR_DELAY = 1200 // 清掉 artplayer「重新连接: N」提示的延迟(ms)
 
 const Preview = () => {
   const { pathname, searchParams } = useRouter()
@@ -72,6 +86,8 @@ const Preview = () => {
   let player: Artplayer
   let flvPlayer: mpegts.Player
   let hlsPlayer: Hls
+  // 直链续期时用于延后清掉 artplayer 的「重新连接」提示(需在 onCleanup 里清理)
+  let noticeTimer: number | undefined
   let option: Option = {
     container: "#video-player",
     volume: 1.0,
@@ -466,9 +482,73 @@ const Preview = () => {
         player.video.crossOrigin = null
       }
     })
+
+    // ── 直链过期自动续播 ───────────────────────────────────────────────────
+    // 见文件头部注释:云盘直链带时效,过期后 artplayer 内置重连(复用同一个 URL)
+    // 必然失败,只能刷新页面。这里改为报错时向后端重新要一份新鲜直链,保位置续播。
+    //
+    // ⚠️ 回位不能走 `player.seek`:artplayer 的 currentTime setter 会做
+    //    `clamp(t, 0, art.duration)`,而 duration 未就绪时它取到 0 → 位置被夹成 0
+    //    (实测:恢复后停在 1s 而不是 62s)。这里直接写原生 video.currentTime,
+    //    并显式等到 duration 可用才执行。
+    let recoverSeekTo = 0
+    const tryRecoverSeek = () => {
+      if (recoverSeekTo <= 0) return
+      const v = player.video
+      if (!v || v.readyState < 2) return
+      if (!Number.isFinite(v.duration) || v.duration <= 0) return
+      if (Math.abs(v.currentTime - recoverSeekTo) <= 1.5) {
+        recoverSeekTo = 0
+        return
+      }
+      v.currentTime = Math.min(recoverSeekTo, Math.max(0, v.duration - 0.5))
+    }
+    player.on("video:loadeddata", tryRecoverSeek)
+    player.on("video:canplay", tryRecoverSeek)
+    player.on("video:timeupdate", tryRecoverSeek) // 兜底:上面两个事件可能早于 duration 就绪
+
+    let recovering = false
+    let recoveryLeft = STREAM_RECOVERY_MAX
+    let lastRecoveryAt = 0
+    player.on("video:error", () => {
+      if (recovering || recoveryLeft <= 0) return
+      if (Date.now() - lastRecoveryAt < STREAM_RECOVERY_COOLDOWN) return
+      recovering = true
+      recoveryLeft -= 1
+      lastRecoveryAt = Date.now()
+      void (async () => {
+        const id = currentId()
+        // 报错瞬间 currentTime 可能已被浏览器重置为 0(赋新 src 会 emptied),退回本地记录
+        const pos =
+          player.currentTime > 0 ? player.currentTime : getProgress(id)
+        try {
+          const resp = await fsGet(pathname(), password())
+          const fresh = resp?.data?.raw_url
+          // 直链与当前一致 → 不是「签名过期」这一类问题,交回 artplayer 自身重连兜底
+          if (resp?.code !== 200 || !fresh || fresh === player.option.url) {
+            recoveryLeft += 1 // 没真正恢复,退还额度
+            return
+          }
+          if (pos > 0) recoverSeekTo = pos
+          await player.switchUrl(fresh)
+          tryRecoverSeek() // switchUrl 在 canplay 时 resolve,此刻 duration 已就绪
+          if (pos > 0) await player.play().catch(() => undefined)
+          // artplayer 内置重连会在报错约 1s 后弹「重新连接: N」,这里延后清掉
+          if (noticeTimer !== undefined) clearTimeout(noticeTimer)
+          noticeTimer = window.setTimeout(() => {
+            if (player.notice.show) player.notice.show = ""
+          }, NOTICE_CLEAR_DELAY)
+        } catch (e) {
+          console.warn("[video] 直链续期失败,请刷新页面重试:", e)
+        } finally {
+          recovering = false
+        }
+      })()
+    })
   })
   onCleanup(() => {
     setShouldKeepState(false)
+    if (noticeTimer !== undefined) clearTimeout(noticeTimer)
     if (player) {
       player.fullscreenWeb = false
       player.fullscreen = false
