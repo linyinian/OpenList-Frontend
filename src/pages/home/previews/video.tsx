@@ -51,10 +51,52 @@ const HOTKEY_PAUSE_WINDOW = 1000
 // 而 artplayer 内置的重连(`art.url = option.url`)复用的是同一个已过期 URL——
 // switchUrl 遇到相同 url 会直接 no-op,于是每秒「空转」一次、重试 5 次全失败,
 // 最后提示「视频加载失败」,只能刷新页面重新取直链。
-// 这里在视频报错时向后端重新要一份新鲜直链,保位置无缝续播。
+// 这里向后端重新要一份新鲜直链,保位置无缝续播,有两条入口:
+//  ① 点播放时**预判**:直链已过期/即将过期(剩余 <30s)→ 立刻续期。
+//     实测「报错后再救」全程约 1.4s(fsGet 仅 ~100ms,大头是换源重载的 ~1.3s),
+//     预判能省掉浏览器试错 403 的往返,更重要的是避免「先播几秒缓冲 → 拖到尽头卡住」。
+//  ② `video:error` 兜底:预判覆盖不到的情况(解析不出有效期、播放中途断流等)。
 const STREAM_RECOVERY_MAX = 5 // 单次页面会话内自动恢复的次数上限(防异常循环)
 const STREAM_RECOVERY_COOLDOWN = 3000 // 两次恢复的最小间隔(ms)
 const NOTICE_CLEAR_DELAY = 1200 // 清掉 artplayer「重新连接: N」提示的延迟(ms)
+/** 直链剩余寿命不足该值时,点播放就主动续期(ms) —— 避免"先播几秒缓冲再卡住" */
+const REFRESH_BEFORE_EXPIRY = 30 * 1000
+
+/**
+ * 解析直链里携带的签名过期时刻(ms 时间戳);返回 0 表示未知或永不过期。
+ * 覆盖两类：
+ *  - 云盘 S3 预签名：`X-Amz-Date=20260930T124846Z` + `X-Amz-Expires=900`(秒)
+ *  - OpenList 自身签名：`sign=<hmac>:<过期 unix 秒>`(0 = 永不过期)
+ * 解析不出就返回 0 → 调用方不做预判，只保留报错兜底，不会误伤。
+ */
+const parseLinkExpiry = (url: string): number => {
+  if (!url) return 0
+  try {
+    const u = new URL(url, location.origin)
+    const expires = u.searchParams.get("X-Amz-Expires")
+    const date = u.searchParams.get("X-Amz-Date")
+    if (expires && date) {
+      const m = date.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/)
+      if (m) {
+        const base = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])
+        const sec = Number(expires)
+        if (base > 0 && Number.isFinite(sec) && sec > 0)
+          return base + sec * 1000
+      }
+    }
+    const sign = u.searchParams.get("sign")
+    if (sign) {
+      const mm = sign.match(/:(\d+)$/)
+      if (mm) {
+        const sec = Number(mm[1])
+        return sec > 0 ? sec * 1000 : 0
+      }
+    }
+  } catch {
+    // 非法 URL：按"未知"处理
+  }
+  return 0
+}
 
 const Preview = () => {
   const { pathname, searchParams } = useRouter()
@@ -510,40 +552,76 @@ const Preview = () => {
     let recovering = false
     let recoveryLeft = STREAM_RECOVERY_MAX
     let lastRecoveryAt = 0
-    player.on("video:error", () => {
+    /** 当前直链的签名过期时刻(ms);0 = 未知或永不过期 */
+    let linkExpiresAt = 0
+
+    const rememberLinkExpiry = () => {
+      linkExpiresAt = parseLinkExpiry(
+        player.video.src || player.option.url || "",
+      )
+    }
+    player.on("video:loadedmetadata", rememberLinkExpiry)
+    player.on("video:loadeddata", rememberLinkExpiry)
+
+    /**
+     * 重新取一份新鲜直链并保位置续播。
+     * @param reason `proactive` = 点播放时预判已过期(主动);`error` = 媒体已报错(兜底)
+     */
+    const recoverStream = async (reason: "proactive" | "error") => {
       if (recovering || recoveryLeft <= 0) return
       if (Date.now() - lastRecoveryAt < STREAM_RECOVERY_COOLDOWN) return
       recovering = true
       recoveryLeft -= 1
       lastRecoveryAt = Date.now()
-      void (async () => {
+      try {
         const id = currentId()
-        // 报错瞬间 currentTime 可能已被浏览器重置为 0(赋新 src 会 emptied),退回本地记录
+        // 主动续期时 currentTime 仍准确;报错兜底时可能已被浏览器重置为 0(赋新 src 会 emptied)
         const pos =
           player.currentTime > 0 ? player.currentTime : getProgress(id)
-        try {
-          const resp = await fsGet(pathname(), password())
-          const fresh = resp?.data?.raw_url
-          // 直链与当前一致 → 不是「签名过期」这一类问题,交回 artplayer 自身重连兜底
-          if (resp?.code !== 200 || !fresh || fresh === player.option.url) {
-            recoveryLeft += 1 // 没真正恢复,退还额度
-            return
-          }
-          if (pos > 0) recoverSeekTo = pos
-          await player.switchUrl(fresh)
-          tryRecoverSeek() // switchUrl 在 canplay 时 resolve,此刻 duration 已就绪
-          if (pos > 0) await player.play().catch(() => undefined)
-          // artplayer 内置重连会在报错约 1s 后弹「重新连接: N」,这里延后清掉
-          if (noticeTimer !== undefined) clearTimeout(noticeTimer)
-          noticeTimer = window.setTimeout(() => {
-            if (player.notice.show) player.notice.show = ""
-          }, NOTICE_CLEAR_DELAY)
-        } catch (e) {
-          console.warn("[video] 直链续期失败,请刷新页面重试:", e)
-        } finally {
-          recovering = false
+        if (reason === "proactive") {
+          player.pause()
+          // 让用户看到「正在加载」,而不是点了没反应
+          player.loading.show = true
         }
-      })()
+        const resp = await fsGet(pathname(), password())
+        const fresh = resp?.data?.raw_url
+        // 直链与当前一致 → 不是「签名过期」这一类问题,交回 artplayer 自身重连兜底
+        if (resp?.code !== 200 || !fresh || fresh === player.option.url) {
+          recoveryLeft += 1 // 没真正恢复,退还额度
+          return
+        }
+        if (pos > 0) recoverSeekTo = pos
+        await player.switchUrl(fresh)
+        rememberLinkExpiry() // 新直链有效期要重算,否则下一次点播放会误判
+        tryRecoverSeek() // switchUrl 在 canplay 时 resolve,此刻 duration 已就绪
+        if (pos > 0) await player.play().catch(() => undefined)
+        // artplayer 内置重连会在报错约 1s 后弹「重新连接: N」,这里延后清掉
+        if (noticeTimer !== undefined) clearTimeout(noticeTimer)
+        noticeTimer = window.setTimeout(() => {
+          if (player.notice.show) player.notice.show = ""
+        }, NOTICE_CLEAR_DELAY)
+      } catch (e) {
+        console.warn("[video] 直链续期失败,请刷新页面重试:", e)
+      } finally {
+        recovering = false
+        player.loading.show = false
+      }
+    }
+
+    // ① 兜底:媒体报错(预判没覆盖到的情况,如播放中途断流)
+    player.on("video:error", () => {
+      void recoverStream("error")
+    })
+
+    // ② 主动:点播放时直链已过期/即将过期 → 立刻续期,不等浏览器试错 403
+    //    否则用户会先看到几秒缓冲画面、拖到尽头才卡住,再进入恢复
+    player.on("video:play", () => {
+      if (
+        linkExpiresAt > 0 &&
+        Date.now() >= linkExpiresAt - REFRESH_BEFORE_EXPIRY
+      ) {
+        void recoverStream("proactive")
+      }
     })
   })
   onCleanup(() => {
